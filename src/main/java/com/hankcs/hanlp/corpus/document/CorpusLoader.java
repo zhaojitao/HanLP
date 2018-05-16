@@ -137,21 +137,21 @@ public class CorpusLoader
     {
 //        try
 //        {
-            Document document = Document.create(IOUtil.readTxt(file.getPath()));
+            Document document = Document.create(file);
             if (document != null)
             {
                 return document;
             }
             else
             {
-                System.exit(-1);
+                throw new IllegalArgumentException(file.getPath() + "读取失败");
             }
 //        }
 //        catch (IOException e)
 //        {
 //            e.printStackTrace();
 //        }
-        return null;
+//        return null;
     }
 
     public static interface Handler

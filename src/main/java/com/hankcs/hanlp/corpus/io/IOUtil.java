@@ -14,6 +14,7 @@ package com.hankcs.hanlp.corpus.io;
 
 import com.hankcs.hanlp.corpus.tag.Nature;
 import com.hankcs.hanlp.dictionary.CoreDictionary;
+import com.hankcs.hanlp.utility.LexiconUtility;
 import com.hankcs.hanlp.utility.TextUtility;
 
 import java.io.*;
@@ -96,6 +97,9 @@ public class IOUtil
             byte[] fileContent = new byte[in.available()];
             readBytesFromOtherInputStream(in, fileContent);
             in.close();
+            // 处理 UTF-8 BOM
+            if (fileContent[0] == -17 && fileContent[1] == -69 && fileContent[2] == -65)
+                return new String(fileContent, 3, fileContent.length - 3, Charset.forName("UTF-8"));
             return new String(fileContent, Charset.forName("UTF-8"));
         }
         catch (FileNotFoundException e)
@@ -322,11 +326,18 @@ public class IOUtil
     {
         LinkedList<String> result = new LinkedList<String>();
         String line = null;
+        boolean first = true;
         try
         {
             BufferedReader bw = new BufferedReader(new InputStreamReader(IOUtil.newInputStream(path), "UTF-8"));
             while ((line = bw.readLine()) != null)
             {
+                if (first)
+                {
+                    first = false;
+                    if (!line.isEmpty() && line.charAt(0) == '\uFEFF')
+                        line = line.substring(1);
+                }
                 result.add(line);
             }
             bw.close();
@@ -381,12 +392,36 @@ public class IOUtil
     }
 
     /**
+     * 删除本地文件
+     * @param path
+     * @return
+     */
+    public static boolean deleteFile(String path)
+    {
+        return new File(path).delete();
+    }
+
+    /**
      * 方便读取按行读取大文件
      */
-    public static class LineIterator implements Iterator<String>
+    public static class LineIterator implements Iterator<String>, Iterable<String>
     {
         BufferedReader bw;
         String line;
+
+        public LineIterator(BufferedReader bw)
+        {
+            this.bw = bw;
+            try
+            {
+                line = bw.readLine();
+            }
+            catch (IOException e)
+            {
+                logger.warning("在读取过程中发生错误" + TextUtility.exceptionToString(e));
+                bw = null;
+            }
+        }
 
         public LineIterator(String path)
         {
@@ -481,6 +516,12 @@ public class IOUtil
         public void remove()
         {
             throw new UnsupportedOperationException("只读，不可写！");
+        }
+
+        @Override
+        public Iterator<String> iterator()
+        {
+            return this;
         }
     }
 
@@ -577,7 +618,7 @@ public class IOUtil
         for (String path : pathArray)
         {
             BufferedReader br = new BufferedReader(new InputStreamReader(IOUtil.newInputStream(path), "UTF-8"));
-            loadDictionary(br, map);
+            loadDictionary(br, map, path.endsWith(".csv"));
         }
 
         return map;
@@ -589,17 +630,22 @@ public class IOUtil
      * @param storage 储存位置
      * @throws IOException 异常表示加载失败
      */
-    public static void loadDictionary(BufferedReader br, TreeMap<String, CoreDictionary.Attribute> storage) throws IOException
+    public static void loadDictionary(BufferedReader br, TreeMap<String, CoreDictionary.Attribute> storage, Boolean isCSV) throws IOException
     {
         String line;
         while ((line = br.readLine()) != null)
         {
-            String param[] = line.split("\\s");
+            String splitter = "\\s";
+            if (isCSV) {
+                splitter = ",";
+            }
+            String param[] = line.split(splitter);
+
             int natureCount = (param.length - 1) / 2;
             CoreDictionary.Attribute attribute = new CoreDictionary.Attribute(natureCount);
             for (int i = 0; i < natureCount; ++i)
             {
-                attribute.nature[i] = Enum.valueOf(Nature.class, param[1 + 2 * i]);
+                attribute.nature[i] = LexiconUtility.convertStringToNature(param[1 + 2 * i]);
                 attribute.frequency[i] = Integer.parseInt(param[2 + 2 * i]);
                 attribute.totalFrequency += attribute.frequency[i];
             }
@@ -616,5 +662,16 @@ public class IOUtil
         {
             TextUtility.writeString(nature.toString(), out);
         }
+    }
+
+    /**
+     * 本地文件是否存在
+     * @param path
+     * @return
+     */
+    public static boolean isFileExisted(String path)
+    {
+        File file = new File(path);
+        return file.isFile() && file.exists();
     }
 }

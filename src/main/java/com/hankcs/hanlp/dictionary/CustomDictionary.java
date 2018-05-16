@@ -30,7 +30,8 @@ import java.util.*;
 import static com.hankcs.hanlp.utility.Predefine.logger;
 
 /**
- * 用户自定义词典
+ * 用户自定义词典<br>
+ *     注意自定义词典的动态增删改不是线程安全的。
  *
  * @author He Han
  */
@@ -41,14 +42,11 @@ public class CustomDictionary
      */
     public static BinTrie<CoreDictionary.Attribute> trie;
     public static DoubleArrayTrie<CoreDictionary.Attribute> dat = new DoubleArrayTrie<CoreDictionary.Attribute>();
-    /**
-     * 第一个是主词典，其他是副词典
-     */
-    public final static String path[] = HanLP.Config.CustomDictionaryPath;
 
     // 自动加载词典
     static
     {
+        String path[] = HanLP.Config.CustomDictionaryPath;
         long start = System.currentTimeMillis();
         if (!loadMainDictionary(path[0]))
         {
@@ -69,6 +67,7 @@ public class CustomDictionary
         LinkedHashSet<Nature> customNatureCollector = new LinkedHashSet<Nature>();
         try
         {
+            String path[] = HanLP.Config.CustomDictionaryPath;
             for (String p : path)
             {
                 Nature defaultNature = Nature.n;
@@ -485,14 +484,7 @@ public class CustomDictionary
     {
         if (trie != null)
         {
-            BaseSearcher searcher = CustomDictionary.getSearcher(text);
-            int offset;
-            Map.Entry<String, CoreDictionary.Attribute> entry;
-            while ((entry = searcher.next()) != null)
-            {
-                offset = searcher.getOffset();
-                processor.hit(offset, offset + entry.getKey().length(), entry.getValue());
-            }
+            trie.parseText(text, processor);
         }
         DoubleArrayTrie<CoreDictionary.Attribute>.Searcher searcher = dat.getSearcher(text, 0);
         while (searcher.next())
@@ -524,5 +516,67 @@ public class CustomDictionary
         {
             processor.hit(searcher.begin, searcher.begin + searcher.length, searcher.value);
         }
+    }
+
+    /**
+     * 最长匹配
+     *
+     * @param text      文本
+     * @param processor 处理器
+     */
+    public static void parseLongestText(String text, AhoCorasickDoubleArrayTrie.IHit<CoreDictionary.Attribute> processor)
+    {
+        if (trie != null)
+        {
+            final int[] lengthArray = new int[text.length()];
+            final CoreDictionary.Attribute[] attributeArray = new CoreDictionary.Attribute[text.length()];
+            char[] charArray = text.toCharArray();
+            DoubleArrayTrie<CoreDictionary.Attribute>.Searcher searcher = dat.getSearcher(charArray, 0);
+            while (searcher.next())
+            {
+                lengthArray[searcher.begin] = searcher.length;
+                attributeArray[searcher.begin] = searcher.value;
+            }
+            trie.parseText(charArray, new AhoCorasickDoubleArrayTrie.IHit<CoreDictionary.Attribute>()
+            {
+                @Override
+                public void hit(int begin, int end, CoreDictionary.Attribute value)
+                {
+                    int length = end - begin;
+                    if (length > lengthArray[begin])
+                    {
+                        lengthArray[begin] = length;
+                        attributeArray[begin] = value;
+                    }
+                }
+            });
+            for (int i = 0; i < charArray.length;)
+            {
+                if (lengthArray[i] == 0)
+                {
+                    ++i;
+                }
+                else
+                {
+                    processor.hit(i, i + lengthArray[i], attributeArray[i]);
+                    i += lengthArray[i];
+                }
+            }
+        }
+        else
+            dat.parseLongestText(text, processor);
+    }
+
+    /**
+     * 热更新（重新加载）<br>
+     * 集群环境（或其他IOAdapter）需要自行删除缓存文件（路径 = HanLP.Config.CustomDictionaryPath[0] + Predefine.BIN_EXT）
+     * @return 是否加载成功
+     */
+    public static boolean reload()
+    {
+        String path[] = HanLP.Config.CustomDictionaryPath;
+        if (path == null || path.length == 0) return false;
+        IOUtil.deleteFile(path[0] + Predefine.BIN_EXT); // 删掉缓存
+        return loadMainDictionary(path[0]);
     }
 }
