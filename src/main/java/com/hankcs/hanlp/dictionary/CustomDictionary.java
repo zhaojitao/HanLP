@@ -71,12 +71,14 @@ public class CustomDictionary
             for (String p : path)
             {
                 Nature defaultNature = Nature.n;
-                int cut = p.indexOf(' ');
+                File file = new File(p);
+                String fileName = file.getName();
+                int cut = fileName.lastIndexOf(' ');
                 if (cut > 0)
                 {
                     // 有默认词性
-                    String nature = p.substring(cut + 1);
-                    p = p.substring(0, cut);
+                    String nature = fileName.substring(cut + 1);
+                    p = file.getParent() + File.separator + fileName.substring(0, cut);
                     try
                     {
                         defaultNature = LexiconUtility.convertStringToNature(nature, customNatureCollector);
@@ -106,8 +108,15 @@ public class CustomDictionary
             {
                 attributeList.add(entry.getValue());
             }
-            DataOutputStream out = new DataOutputStream(IOUtil.newOutputStream(mainPath + Predefine.BIN_EXT));
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(IOUtil.newOutputStream(mainPath + Predefine.BIN_EXT)));
             // 缓存用户词性
+            if (customNatureCollector.isEmpty()) // 热更新
+            {
+                for (int i = Nature.begin.ordinal() + 1; i < Nature.values().length; ++i)
+                {
+                    customNatureCollector.add(Nature.values()[i]);
+                }
+            }
             IOUtil.writeCustomNature(out, customNatureCollector);
             // 缓存正文
             out.writeInt(attributeList.size());
@@ -302,6 +311,10 @@ public class CustomDictionary
     {
         try
         {
+            if (isDicNeedUpdate(path))
+            {
+                return false;
+            }
             ByteArray byteArray = ByteArray.createByteArray(path + Predefine.BIN_EXT);
             if (byteArray == null) return false;
             int size = byteArray.nextInt();
@@ -336,6 +349,38 @@ public class CustomDictionary
             return false;
         }
         return true;
+    }
+
+    /**
+     * 获取本地词典更新状态
+     * @return true 表示本地词典比缓存文件新，需要删除缓存
+     */
+    private static boolean isDicNeedUpdate(String mainPath)
+    {
+        if (HanLP.Config.IOAdapter != null &&
+            !HanLP.Config.IOAdapter.getClass().getName().contains("com.hankcs.hanlp.corpus.io.FileIOAdapter"))
+        {
+            return false;
+        }
+        String binPath = mainPath + Predefine.BIN_EXT;
+        File binFile = new File(binPath);
+        if (!binFile.exists())
+        {
+            return true;
+        }
+        long lastModified = binFile.lastModified();
+        String path[] = HanLP.Config.CustomDictionaryPath;
+        for (String p : path)
+        {
+            File f = new File(p);
+            if (f.exists() && f.lastModified() > lastModified)
+            {
+                IOUtil.deleteFile(binPath); // 删掉缓存
+                logger.info("已清除自定义词典缓存文件！");
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

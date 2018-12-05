@@ -390,7 +390,7 @@ public class DoubleArrayTrie<V> implements Serializable, ITrie<V>
     public int build(List<String> _key, int _length[], int _value[],
                      int _keySize)
     {
-        if (_keySize > _key.size() || _key == null)
+        if (_key == null || _keySize > _key.size())
             return 0;
 
         // progress_func_ = progress_func;
@@ -413,6 +413,7 @@ public class DoubleArrayTrie<V> implements Serializable, ITrie<V>
         List<Node> siblings = new ArrayList<Node>();
         fetch(root_node, siblings);
         insert(siblings);
+        shrink();
 
         // size += (1 << 8 * 2) + 1; // ???
         // if (size >= allocSize) resize (size);
@@ -1320,6 +1321,7 @@ public class DoubleArrayTrie<V> implements Serializable, ITrie<V>
                     if (begin == arrayLength) break;
                     if (value != null)
                     {
+                        i = begin + length;         // 输出最长词后，从该词语的下一个位置恢复扫描
                         return true;
                     }
 
@@ -1432,6 +1434,24 @@ public class DoubleArrayTrie<V> implements Serializable, ITrie<V>
     public V get(int index)
     {
         return v[index];
+    }
+
+    /**
+     * 释放空闲的内存
+     */
+    private void shrink()
+    {
+//        if (HanLP.Config.DEBUG)
+//        {
+//            System.err.printf("释放内存 %d bytes\n", base.length - size - 65535);
+//        }
+        int nbase[] = new int[size + 65535];
+        System.arraycopy(base, 0, nbase, 0, size);
+        base = nbase;
+
+        int ncheck[] = new int[size + 65535];
+        System.arraycopy(check, 0, ncheck, 0, size);
+        check = ncheck;
     }
 
 
